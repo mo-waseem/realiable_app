@@ -79,7 +79,7 @@ def get_and_create_leads():
         Optimizing the task:
         - do it in batches and each batch is a separate task and can have 10 customers' leads for example.
         - creating the leads in bulk instead of one by one, but this can be tricky if we want to catch the exceptions for each lead and continue with the next lead.
-        - for catching the exceptions for each lead we can us pydantic to validate the lead data before creating it, and if it's invalid we can log it and continue with the next lead.
+        - for catching the exceptions for each lead we can use pydantic to validate the lead data before creating it, and if it's invalid we can log it and continue with the next lead.
         - we can consider this task as a long running task and enqueue it to a separate queue with a higher timeout, and the main queue can have a lower timeout to avoid blocking other tasks.
     """
 

@@ -15,6 +15,10 @@ def send_whatsapp_message(request):
     # sending to WhatsApp fails:
     # if the message is created in the db but the sending to WhatsApp fails,
     # the message will be stuck in PENDING status and will never be sent.
+
+
+
+
     
     # Solution #1:
     # we can use a retry mechanism to retry sending the message if it fails,
@@ -67,27 +71,7 @@ def send_whatsapp_message(request):
     
 
     message.status = "SENT"
-    """
-    Problem #4:
-        Asynchronous webhook from WhatsApp can be received before the message_id is set in the db:
-
-        the webhook may fail to find the message in the db and will not update its status to SENT,
-        and the message will be stuck in PENDING status and will never be in sent status.
-
-        This could lead to bunch of problems like:
-        - the message will be stuck in PENDING status and will never be sent.
-        - the message will be sent twice if the user retries sending the message.
-        
-    Solution #4:
-        We need a way that guarantee that we will effectively receive and process the webhook one time only:
-        
-        - we can use a retry in the webhook handler to retry finding the message in the db if it's not found,
-        after a wait time, but this is not a good solution because it will 
-        delay the webhook response and can cause a timeout.
-
-        - we can use inbox pattern to handle the webhook and update the message status in the db.
     
-    """
     # here we could receive the webhook from WA before the message_id is set in the db
     message.provider_message_id = response["message_id"]
     message.save(

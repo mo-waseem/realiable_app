@@ -44,9 +44,9 @@ Problem #2:
 
 
 Solution #2:
-    Blue/Green deployment:
+    Rolling deployment:
 
-        In this case we can use the blue/green deployment strategy, deploying the new workers
+        In this case we can use the rolling deployment strategy, deploying the new workers
         before shutting down the old workers.
 
         So that, any new tasks will be consumed by the new workers and we will have zero down-time

@@ -164,6 +164,30 @@ def webhook_handler(request):
 
     
     """
+    """
+        Problem #5:
+            Asynchronous webhook from WhatsApp can be received before the message_id is set in the db:
+    
+            the webhook may fail to find the message in the db and will not update its status to SENT,
+            and the message will be stuck in PENDING status and will never be in sent status.
+    
+            This could lead to bunch of problems like:
+            - the message will be stuck in PENDING status and will never be sent.
+            - the message will be sent twice if the user retries sending the message.
+            
+        Solution #5:
+            We need a way that guarantee that we will effectively receive and process the webhook one time only:
+            
+            - we can use a retry in the webhook handler to retry finding the message in the db if it's not found,
+            after a wait time, but this is not a good solution because it will 
+            delay the webhook response and can cause a timeout.
+    
+            - we can use inbox pattern to handle the webhook and update the message status in the db.
+    
+            - Inbox can provide us with event status so in this case we can keep the inboxevent status to NEW, so it can 
+            be processed again till the the message is appear in the db
+        
+        """
 
     process_webhook_data(received_data)
 
