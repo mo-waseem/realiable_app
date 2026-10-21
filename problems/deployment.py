@@ -77,15 +77,45 @@ Problem #3:
     
     The new workers consider that the task has two args not one, so it may fail.
 
+    And the opposite direction during the rolling deployment:
+    new code sends send_report(report_id, provider) -> an OLD worker picks it -> fails (unexpected arg).
+
 Solution #3:
     Backward Compatible:
 
-    Change for a task needed ? Make it backward compatible:
+    Treat the task signature like a public API.
 
-    It's preferable to add a totally new task instead of changing in the 
-    definition of the current one.
-    
-    
+    1- Additive change (new optional field) -> one deployment:
+
+        Use a default value, or better: one JSON payload validated by pydantic (with defaults)
+
+        @task
+        def send_report(data):
+            payload = SendReportPayload.model_validate(data)   # provider: str = "default"
+
+        Old message without provider -> default is used.
+        New message on an old worker -> the extra field is ignored.
+
+        Take care: ignoring the new field must be acceptable, otherwise it's a breaking change.
+        Note: switching an existing task to the "data" style is itself a breaking change -> do it with option 2.
+
+    2- Breaking change (field required / renamed / changed meaning) -> new task on a new queue, one deployment:
+
+        @task(queue="reports_v2")
+        def send_report_v2(data):
+            ...
+
+        - New code sends only to send_report_v2 on "reports_v2"
+        - Old workers don't listen to "reports_v2" -> they never get the new format
+        - New workers keep the OLD task too and consume both queues till the old one is drained:
+
+            celery worker -Q reports,reports_v2
+
+        - If no new worker is up yet, the message just waits in the queue (delayed, not lost)
+        - Later (any time): remove the old task and queue (cleanup deployment)
+
+    3- Otherwise -> two deployments:
+        first deploy the receiver (workers that accept the new form), then the sender.
 
 """
 
@@ -145,6 +175,9 @@ Solution #4:
             )
         
     3- Backfill existing data to the new column:
+        After all new compatible code is deployed into all services and workers,
+        we can start Backfilling...
+
 
         We can have here a script to do this, 
 
@@ -169,7 +202,10 @@ Solution #4:
     
     4- Switch code fully to use the new schema:
 
-        After finishing backfilling, we can switch the code fully to use the new schema.
+        After finishing backfilling (and making sure that all rows of the new column has values especially if we were 
+        choosing the eventual backfill), 
+        
+        we can switch the code fully to use the new schema.
 
     5- Contract:
 

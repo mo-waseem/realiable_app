@@ -89,7 +89,14 @@ def get_and_create_leads():
         previous execution is still running.
         
         Another worker can therefore execute the same synchronization
-        concurrently and attempt to create the same leads.
+        concurrently, which causes:
+        - duplicate leads (if there is no unique constraint)
+        - runs piling up and starving the workers / other tasks
+        - repeated external API calls (rate limits, wasted work)
+        - DB contention on inserting the same rows
+        - repeated side effects (e.g. notifying about the same lead twice)
+
+        Note: get_or_create + unique constraint fixes only the duplicates.
     
     # Solution #5:
         Use a distributed lock with one stable key, such as:

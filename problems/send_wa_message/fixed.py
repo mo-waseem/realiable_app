@@ -1,3 +1,9 @@
+MAX_RETRIES = 5
+
+# Final states: the ordering guard doesn't wait for these.
+FINAL_STATUSES = ["SENT", "FAILED_PERMANENTLY"]
+
+
 def send_whatsapp_message_outbox(request):
     with transaction.atomic():
         message = Message.objects.create(
@@ -37,14 +43,14 @@ def send_whatsapp_message_outbox_task(outbox_entry_id):
     )
 
     # Don't send this message if an older message for the same
-    # customer + phone number hasn't finished yet.
+    # customer + phone number hasn't finished yet (not in a final state).
     previous_entry_exists = (
         OutboxEntry.objects.filter(
             message__customer=outbox_entry.message.customer,
             message__phone_number=outbox_entry.message.phone_number,
             id__lt=outbox_entry.id,
         )
-        .exclude(status="SENT")
+        .exclude(status__in=FINAL_STATUSES)
         .exists()
     )
 
@@ -65,8 +71,17 @@ def send_whatsapp_message_outbox_task(outbox_entry_id):
         )
 
     except Exception:
-        outbox_entry.status = "FAILED"
-        outbox_entry.save(update_fields=["status"])
+        outbox_entry.retry_count += 1
+
+        if outbox_entry.retry_count >= MAX_RETRIES:
+            # Final state: stop retrying and unblock the next messages in this conversation.
+            outbox_entry.status = "FAILED_PERMANENTLY"
+            logger.exception("Outbox entry %s failed permanently", outbox_entry.id)  # + alert
+        else:
+            # Back to PENDING so the poller retries it.
+            outbox_entry.status = "PENDING"
+
+        outbox_entry.save(update_fields=["status", "retry_count"])
         raise
 
     outbox_entry.status = "SENT"

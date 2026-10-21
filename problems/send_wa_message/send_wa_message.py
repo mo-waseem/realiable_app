@@ -41,8 +41,7 @@ def send_whatsapp_message(request):
 
     """
     Problem #3:
-        Async WA sending task could not found the message in the db!
-        or it can fail for any other reason.
+        Async WA sending task can fail and the message is stored in DB but not sent!.
     
     Solution #3:
         - we can use a retry mechanism to retry finding the message in the db if it's not found, 
@@ -137,24 +136,36 @@ def handle_outbox_entries():
     Problem #1:
         Same message can be sent twice:
 
-        if this task is taking more than 3 seconds, another worker can pick the next handle_outbox_entries 
-        when this one is not finished yet, and the same outbox entry can be sent twice!!
-    
+        The poller enqueues ALL PENDING entries every 3 sec, including entries already enqueued
+        by on_commit or currently being sent (status stays PENDING until WhatsApp responds).
+        -> two tasks for the same entry run concurrently -> sent twice.
+
     Solution #1:
-        - make the task idempotent by checking the status of the outbox entry before sending it, 
-        and if it's already sent, skip it.
+        Atomic claim in the task: PENDING -> PROCESSING with a conditional update.
+        Only the worker that changed the row sends; the others skip.
+
+            claimed = OutboxEntry.objects.filter(
+                id=outbox_entry_id, status="PENDING"
+            ).update(status="PROCESSING")
+
+            if not claimed:
+                return  # another worker has it, or it's already sent
+
+        ("check status then send" is not enough: both workers can read PENDING at the same time)
     """
     """
     Problem #2:
         Messages can be sent out of order:
-
-        Messages can be sent out of order if the outbox entries are not processed in 
-        the order they were created.
+        - multiple workers send in parallel -> a later message can finish first
+        - a failed message retried later goes after newer ones
 
     Solution #2:
-        - Add a guard in send_whatsapp_message_outbox_task to check if there are any 
-        pending outbox entries for the same customer and phone number, 
-        and if so, skip sending the current outbox entry until the previous ones are sent.
+        Per-conversation guard (customer + phone number):
+        don't send an entry while an older entry for the same conversation is not finished yet
+        (anything not SENT) -> release it back to PENDING and try later.
+
+        Take care: a FAILED entry blocks the conversation forever!
+        -> retry it N times, then mark it FAILED_PERMANENTLY (+ alert); the guard ignores final states.
 
     """
     
