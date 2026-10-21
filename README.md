@@ -36,9 +36,9 @@ The code exercises apply related ideas to lead imports and messaging workflows.
 | Scenario | Start with | Follow-up | Discussion focus |
 | --- | --- | --- | --- |
 | Lead synchronization | [Original example](problems/leads/get_and_create_leads.py) | [Revised example](problems/leads/fixed.py), then [batched version](problems/leads/fixed_with_batches.py) | Overlapping scheduled jobs, duplicate records, validation, timeouts, Redis locks, and workload isolation |
-| WhatsApp message sending | [Original example and outbox walkthrough](problems/send_wa_message/send_wa_message.py) | [Revised example](problems/send_wa_message/fixed.py) | Saving intent transactionally, claiming work atomically, concurrent workers, and message ordering |
-| Webhook handling | [Annotated scenario](problems/webhook_handler.py) | Discuss the proposed approaches in the file | Duplicate and out-of-order events, inboxes, state transitions, and reconciliation |
-| Deployments | [Deployment scenarios](problems/deployment.py) | Walk through each rollout failure | In-flight tasks, worker replacement, task compatibility, and schema evolution |
+| WhatsApp message sending | [Original example and outbox walkthrough](problems/send_wa_message/send_wa_message.py) | [Revised example](problems/send_wa_message/fixed.py) | Saving intent transactionally, claiming work atomically, concurrent workers, message ordering, and retry limits so one failed message doesn't block a conversation |
+| Webhook handling | [Annotated scenario](problems/webhook_handler.py) | Discuss the proposed approaches in the file | Events lost after responding 200, inboxes and polling, atomic claims, duplicate and out-of-order events, state transitions, and reconciliation |
+| Deployments | [Deployment scenarios](problems/deployment.py) | Walk through each rollout failure | In-flight tasks, worker replacement, task compatibility (JSON payloads, versioned queues), and schema evolution |
 
 ## How to use the materials
 
@@ -58,13 +58,13 @@ Use the [suggested three-hour agenda](application-reliability-session.md#3-sugge
 
 The Python files are teaching snippets intended for reading, discussion, and adaptation. The repository does not include a runnable Django project, dependency manifest, database models, service configuration, or a test suite.
 
-The examples assume application-provided objects such as `Customer`, `Lead`, `Message`, `OutboxEntry`, a configured Celery app, and a WhatsApp client. Lead synchronization examples also use Redis, Requests, and Pydantic v2-style validation. External URLs are placeholders.
+The examples assume application-provided objects such as `Customer`, `Lead`, `Message`, `OutboxEntry`, `InboxEvent`, `Payment`, a configured Celery app, and a WhatsApp client. Some snippets also assume extra fields such as `retry_count`, `enqueued_at`, and `processing_started_at`. Lead synchronization examples also use Redis, Requests, and Pydantic v2-style validation. External URLs are placeholders.
 
 Files named `fixed.py` illustrate improvements within an exercise; they are intermediate designs with further failure cases to discuss. For example:
 
 - Database uniqueness constraints are still needed to prevent duplicate leads when locks expire or executions overlap.
-- An outbox claim does not by itself resolve a worker crash after the provider accepts a message, recover abandoned `PROCESSING` entries, or retry `FAILED` entries.
-- Moving webhook processing to a queue shortens response time, but duplicate delivery still requires idempotent processing.
+- The outbox example retries failed sends up to a limit, then marks them `FAILED_PERMANENTLY`, but it does not resolve a worker crash after the provider accepts a message or recover abandoned `PROCESSING` entries.
+- Moving webhook processing to a queue shortens response time, but the event can be lost after responding 200; storing it in an inbox first, polling it, and claiming it atomically fixes that, while duplicate delivery still requires idempotent processing.
 
 To turn an exercise into a runnable application, supply the models and constraints, framework imports, provider integration, and database/queue configuration, and adapt task registration and scheduling to your Celery version.
 
